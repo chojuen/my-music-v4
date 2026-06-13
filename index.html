@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Music Player</title>
+    <script type="module" src="https://unpkg.com/ionicons@7.1.0/dist/ionicons/ionicons.esm.js"></script>
+    <style>
+        /* React NativeのスタイルをCSSに忠実に再現 */
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background-color: #fff; color: #333; overflow-x: hidden; }
+        
+        /* 共通コンテナ */
+        .container { display: flex; flex-direction: column; min-height: 100vh; padding-top: 50px; position: relative; }
+        
+        /* ヘッダー */
+        .header-title { font-size: 28px; font-weight: 800; margin: 25px 0; color: #000; padding-horizontal: 30px; padding-left: 30px; }
+        
+        /* リストアイテム */
+        .item-row { display: flex; align-items: center; border-bottom: 0.5px solid #f0f0f0; height: 75px; background-color: #fff; cursor: pointer; transition: background-color 0.2s; }
+        .item-main { flex: 1; padding: 0 30px; display: flex; align-items: center; }
+        .item-text { font-size: 17px; color: #333; }
+        .drag-handle { padding: 0 20px; color: #007AFF; display: flex; align-items: center; }
+        
+        /* モード時の背景色変更 */
+        .item-row.selected { background-color: #ffe5e5; }
+        
+        /* 上部画像エリア */
+        .top-image-wrapper { width: 100%; height: 320px; position: relative; background-color: #f0f0f0; }
+        .top-image { width: 100%; height: 100%; object-fit: cover; }
+        .icon-only-button { position: absolute; bottom: 20px; right: 20px; background-color: rgba(0,0,0,0.4); width: 48px; height: 48px; border-radius: 24px; display: flex; justify-content: center; align-items: center; border: none; color: #fff; cursor: pointer; }
+        .icon-only-button ion-icon { font-size: 22px; }
+
+        /* フッター・メニューエリア */
+        .footer-container { padding: 40px 0 250px 0; display: flex; flex-direction: column; align-items: center; }
+        .edit-simple-btn { display: flex; align-items: center; padding: 10px 15px; border: none; background: none; color: #007AFF; font-size: 16px; font-weight: 600; cursor: pointer; }
+        .sort-toggle-btn { padding: 15px; border: none; background: none; color: #007AFF; font-size: 16px; font-weight: 600; cursor: pointer; }
+        
+        .expanded-menu { background-color: #fff; border-radius: 15px; width: 200px; margin-bottom: 10px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); border: 1px solid #eee; overflow: hidden; display: none; }
+        .expanded-menu.open { display: block; }
+        .menu-item { display: flex; align-items: center; padding: 15px 20px; border: none; background: none; width: 100%; text-align: left; border-bottom: 1px solid #f0f0f0; color: #007AFF; font-size: 16px; font-weight: 600; cursor: pointer; }
+        .menu-item ion-icon { font-size: 20px; margin-right: 10px; }
+        
+        /* フル画面プレイヤー */
+        .player-view { display: none; flex-direction: column; align-items: center; justify-content: center; padding: 0 40px; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #fff; z-index: 100; }
+        .player-view.open { display: flex; }
+        .player-album-art { width: 80vw; height: 80vw; max-width: 340px; max-height: 340px; border-radius: 20px; margin-bottom: 30px; object-fit: cover; background-color: #f0f0f0; }
+        .player-song-title { font-size: 24px; font-weight: bold; margin-bottom: 2px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .player-album-name { font-size: 16px; color: #888; margin-bottom: 2px; text-align: center; }
+        .player-artist-name { font-size: 18px; color: #666; margin-bottom: 30px; text-align: center; }
+        
+        /* スライダー（プログレスバー） */
+        .slider-container { width: 100%; margin-bottom: 30px; }
+        .slider { width: 100%; height: 40px; accent-color: #000; cursor: pointer; }
+        .time-info { display: flex; justify-content: space-between; padding: 0 5px; }
+        .time-text { font-size: 12px; color: #999; }
+        
+        /* コントロール */
+        .controls { display: flex; align-items: center; justify-content: space-between; width: 100%; }
+        .control-btn { border: none; background: none; cursor: pointer; color: #000; display: flex; align-items: center; }
+        .control-btn ion-icon { font-size: 40px; }
+        .play-btn-circle { width: 80px; height: 80px; background-color: #f0f0f0; border-radius: 40px; display: flex; justify-content: center; align-items: center; border: none; cursor: pointer; }
+        .play-btn-circle ion-icon { font-size: 50px; }
+        .close-player-btn { position: absolute; top: 20px; border: none; background: none; color: #ccc; cursor: pointer; }
+        .close-player-btn ion-icon { font-size: 30px; }
+        
+        /* ミニプレイヤー */
+        .mini-player { position: fixed; bottom: 30px; left: 15px; right: 15px; height: 65px; background-color: #fff; border-radius: 15px; display: none; align-items: center; padding: 0 20px; box-shadow: 0 10px 20px rgba(0,0,0,0.1); border: 1px solid #eee; z-index: 90; cursor: pointer; }
+        .mini-player.active { display: flex; }
+        .mini-text-container { flex: 1; min-width: 0; }
+        .mini-song-title { font-size: 15px; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mini-artist-name { font-size: 13  px; color: #888; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mini-play-btn { border: none; background: none; color: #000; cursor: pointer; display: flex; align-items: center; }
+        .mini-play-btn ion-icon { font-size: 30px; }
+
+        /* 非表示用クラス */
+        .hidden { display: none !important; }
+        
+        /* 隠しファイルインプット */
+        #music-input, #cover-input { display: none; }
+    </style>
+</head>
+<body>
+
+    <div class="container" id="main-view">
+        <div id="image-area" class="hidden">
+            <div class="top-image-wrapper">
+                <img id="top-image-display" src="" class="top-image" alt="Cover">
+                <button class="icon-only-button" onclick="triggerCoverPicker()"><ion-icon name="camera"></ion-icon></button>
+            </div>
+        </div>
+
+        <h1 class="header-title" id="view-title">Artists</h1>
+
+        <div id="list-container"></div>
+
+        <div class="footer-container">
+            <div class="expanded-menu" id="expanded-menu">
+                <button class="menu-item" id="add-music-menu-item" onclick="triggerMusicPicker()">
+                    <ion-icon name="add-circle-outline"></ion-icon>Add Music
+                </button>
+                <button class="menu-item" onclick="enableDeleteMode()">
+                    <ion-icon name="trash-outline"></ion-icon>Delete Mode
+                </button>
+                <button class="menu-item" style="border-bottom:none;" onclick="enableSortMode()">
+                    <ion-icon name="swap-vertical"></ion-icon>Sort Mode
+                </button>
+            </div>
+
+            <div id="normal-actions">
+                <button class="edit-simple-btn" id="edit-btn" onclick="toggleMenu()">Edit</button>
+            </div>
+            <div id="mode-actions" class="hidden" style="display:flex; gap:20px;">
+                <button class="sort-toggle-btn" id="mode-confirm-btn">Done</button>
+                <button class="sort-toggle-btn" id="mode-cancel-btn" class="hidden">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="player-view" id="player-view">
+        <button class="close-player-btn" onclick="closePlayer()"><ion-icon name="chevron-down"></ion-icon></button>
+        <img id="player-art" src="" class="player-album-art" alt="Album Art">
+        <div id="player-title" class="player-song-title">Song Title</div>
+        <div id="player-album" class="player-album-name">Album Name</div>
+        <div id="player-artist" class="player-artist-name">Artist Name</div>
+        
+        <div class="slider-container">
+            <input type="range" class="slider" id="progress-slider" min="0" max="100" value="0" oninput="seekAudio(this.value)">
+            <div class="time-info">
+                <span class="time-text" id="time-current">0:00</span>
+                <span class="time-text" id="time-duration">0:00</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="control-btn" onclick="playPrevious()"><ion-icon name="play-back"></ion-icon></button>
+            <button class="play-btn-circle" onclick="togglePlay()"><ion-icon id="player-play-icon" name="pause"></ion-icon></button>
+            <button class="control-btn" onclick="playNext()"><ion-icon name="play-forward"></ion-icon></button>
+        </div>
+    </div>
+
+    <div class="mini-player" id="mini-player" onclick="openPlayer()">
+        <div class="mini-text-container">
+            <div class="mini-song-title" id="mini-title">Song Title</div>
+            <div class="mini-artist-name" id="mini-artist">Artist Name</div>
+        </div>
+        <button class="mini-play-btn" onclick="event.stopPropagation(); togglePlay();">
+            <ion-icon id="mini-play-icon" name="pause"></ion-icon>
+        </button>
+    </div>
+
+    <input type="file" id="music-input" multiple accept="audio/*" onchange="handleMusicUpload(event)">
+    <input type="file" id="cover-input" accept="image/*" onchange="handleCoverUpload(event)">
+
+    <audio id="audio-engine"></audio>
+
+    <script>
+        // --- データ管理と状態 (ReactのuseStateに相当) ---
+        let currentView = 'artists'; // 'artists', 'albums', 'songs'
+        let selectedArtist = null;
+        let selectedAlbum = null;
+        let library = []; // 音楽ライブラリのデータ構造
+        
+        let isMenuOpen = false;
+        let isDeleteMode = false;
+        let isSortMode = false;
+        let selectedIds = [];
+        
+        let currentPlayingSong = null;
+        let currentPlayingList = [];
+        let currentPlayingIndex = -1;
+
+        const audioEngine = document.getElementById('audio-engine');
+        const defaultCover = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100"><rect width="100" height="100" fill="%23f0f0f0"/><text x="50" y="55" font-family="sans-serif" font-size="12" fill="%23aaa" text-anchor="middle">No Image</text></svg>';
+
+        // --- 初期のLocalStorage読み込み (useEffect相当) ---
+        window.onload = function() {
+            const saved = localStorage.getItem('my_music_library');
+            if (saved) {
+                library = JSON.parse(saved);
+            }
+            render();
+            
+            // 再生位置のスライダー連動
+            audioEngine.addEventListener('timeupdate', () => {
+                if (!audioEngine.duration) return;
+                const progress = (audioEngine.currentTime / audioEngine.duration) * 100;
+                document.getElementById('progress-slider').value = progress;
+                document.getElementById('time-current').text = formatTime(audioEngine.currentTime * 1000);
+            });
+
+            audioEngine.addEventListener('loadedmetadata', () => {
+                document.getElementById('time-duration').text = formatTime(audioEngine.duration * 1000);
+            });
+
+            audioEngine.addEventListener('ended', () => {
+                playNext();
+            });
+        };
+
+        function saveLibrary() {
+            localStorage.setItem('my_music_library', JSON.stringify(library));
+        }
+
+        // --- 画面描画のコアロジック ---
+        function render() {
+            const listContainer = document.getElementById('list-container');
+            const viewTitle = document.getElementById('view-title');
+            const imageArea = document.getElementById('image-area');
+            const topImageDisplay = document.getElementById('top-image-display');
+            const addMusicItem = document.getElementById('add-music-menu-item');
+            
+            listContainer.innerHTML = '';
+            
+            if (currentView === 'artists') {
+                viewTitle.innerText = "Artists";
+                imageArea.classList.add('hidden');
+                addMusicItem.classList.remove('hidden'); // アーティスト画面でのみ音楽追加可能
+                
+                library.forEach((art, index) => {
+                    createRow(art.id, art.artist, () => navigateTo('albums', art), index);
+                });
+            } 
+            else if (currentView === 'albums') {
+                viewTitle.innerText = selectedArtist.artist;
+                imageArea.classList.remove('hidden');
+                topImageDisplay.src = selectedArtist.customArtistCover || defaultCover;
+                addMusicItem.classList.add('hidden');
+                
+                selectedArtist.albums.forEach((alb, index) => {
+                    createRow(alb.id, alb.title, () => navigateTo('songs', selectedArtist, alb), index);
+                });
+            } 
+            else if (currentView === 'songs') {
+                viewTitle.innerText = selectedAlbum.title;
+                imageArea.classList.remove('hidden');
+                topImageDisplay.src = selectedAlbum.customCover || defaultCover;
+                addMusicItem.classList.add('hidden');
+                
+                selectedAlbum.songs.forEach((song, index) => {
+                    createRow(song.id, song.title, () => startPlay(song, selectedAlbum.songs, index), index);
+                });
+            }
+        }
+
+        function createRow(id, text, onClick, index) {
+            const listContainer = document.getElementById('list-container');
+            const row = document.createElement('div');
+            row.className = 'item-row';
+            if (selectedIds.includes(id)) row.classList.add('selected');
+            
+            row.onclick = () => {
+                if (isDeleteMode) {
+                    toggleSelection(id);
+                } else if (isSortMode) {
+                    // ソートモード時はクリックで何も起きない
+                } else {
+                    onClick();
+                }
+            };
+            
+            const main = document.createElement('div');
+            main.className = 'item-main';
+            main.innerHTML = `<span class="item-text">${text}</span>`;
+            row.appendChild(main);
+            
+            if (isDeleteMode || isSortMode) {
+                const handle = document.createElement('div');
+                handle.className = 'drag-handle';
+                if (isDeleteMode) {
+                    const isSel = selectedIds.includes(id);
+                    handle.innerHTML = `<ion-icon name="${isSel ? 'checkbox' : 'square-outline'}"></ion-icon>`;
+                } else if (isSortMode) {
+                    handle.innerHTML = `<ion-icon name="reorder-three" style="cursor:ns-resize;"></ion-icon>`;
+                    // 簡易的な並び替え（上下ボタンの代わりに、ブラウザネイティブのドラッグ等もできますがコードをシンプルに保つためハンドル表示のみ）
+                    handle.onclick = (e) => {
+                        e.stopPropagation();
+                        moveItem(index);
+                    };
+                }
+                row.appendChild(handle);
+            }
+            
+            listContainer.appendChild(row);
+        }
+
+        // --- 画面遷移 ---
+        function navigateTo(view, artist = null, album = null) {
+            currentView = view;
+            if (artist) selectedArtist = artist;
+            if (album) selectedAlbum = album;
+            
+            // モード解除
+            isDeleteMode = false;
+            isSortMode = false;
+            selectedIds = [];
+            closeMenu();
+            
+            window.scrollTo(0, 0);
+            render();
+        }
+
+        // ブラウザの「戻る」の挙動をシミュレート
+        window.addEventListener('popstate', function() {
+            // 必要に応じて戻る処理を実装可能
+        });
+
+        // --- 音楽追加ロジック ---
+        function triggerMusicPicker() { document.getElementById('music-input').click(); }
+        function handleMusicUpload(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+            
+            for (let file of files) {
+                const objectUrl = URL.createObjectURL(file);
+                
+                // ブラウザ版ではファイル名から簡易的にアーティストとアルバムを判定します
+                // 例: "アーティスト名 - 曲名.mp3" などの解析
+                let artistName = "Unknown Artist";
+                let albumName = "Unknown Album";
+                let songTitle = file.name.replace(/\.[^/.]+$/, ""); // 拡張子削除
+                
+                if (songTitle.includes('-')) {
+                    const parts = songTitle.split('-');
+                    artistName = parts[0].trim();
+                    songTitle = parts[1].trim();
+                }
+
+                let art = library.find(a => a.artist === artistName);
+                if (!art) {
+                    art = { id: 'art-' + Date.now() + '-' + Math.random(), artist: artistName, albums: [] };
+                    library.push(art);
+                }
+                let alb = art.albums.find(al => al.title === albumName);
+                if (!alb) {
+                    alb = { id: 'alb-' + Date.now() + '-' + Math.random(), title: albumName, songs: [] };
+                    art.albums.push(alb);
+                }
+                
+                alb.songs.push({
+                    id: 'snd-' + Date.now() + '-' + Math.random(),
+                    title: songTitle,
+                    uri: objectUrl // ブラウザ内で再生可能な一時URL
+                });
+            }
+            
+            saveLibrary();
+            render();
+            closeMenu();
+        }
+
+        // --- カバー画像変更 ---
+        function triggerCoverPicker() { document.getElementById('cover-input').click(); }
+        function handleCoverUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const base64Uri = e.target.result;
+                if (currentView === 'albums') {
+                    selectedArtist.customArtistCover = base64Uri;
+                } else if (currentView === 'songs') {
+                    selectedAlbum.customCover = base64Uri;
+                }
+                saveLibrary();
+                render();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        // --- メニュー・編集モード管理 ---
+        function toggleMenu() {
+            isMenuOpen = !isMenuOpen;
+            document.getElementById('expanded-menu').classList.toggle('open', isMenuOpen);
+            document.getElementById('edit-btn').innerText = isMenuOpen ? "Close" : "Edit";
+        }
+        function closeMenu() {
+            isMenuOpen = false;
+            document.getElementById('expanded-menu').classList.remove('open');
+            document.getElementById('edit-btn').innerText = "Edit";
+        }
+
+        function enableDeleteMode() {
+            closeMenu();
+            isDeleteMode = true;
+            document.getElementById('normal-actions').classList.add('hidden');
+            document.getElementById('mode-actions').classList.remove('hidden');
+            
+            const confirmBtn = document.getElementById('mode-confirm-btn');
+            const cancelBtn = document.getElementById('mode-cancel-btn');
+            cancelBtn.classList.remove('hidden');
+            
+            confirmBtn.innerText = "Delete (0)";
+            confirmBtn.onclick = deleteSelectedItems;
+            cancelBtn.onclick = () => navigateTo(currentView);
+            render();
+        }
+
+        function toggleSelection(id) {
+            if (selectedIds.includes(id)) {
+                selectedIds = selectedIds.filter(i => i !== id);
+            } else {
+                selectedIds.push(id);
+            }
+            document.getElementById('mode-confirm-btn').innerText = `Delete (${selectedIds.length})`;
+            render();
+        }
+
+        function deleteSelectedItems() {
+            if (selectedIds.length === 0) { navigateTo(currentView); return; }
+            if (!confirm(`${selectedIds.length}個のアイテムを削除しますか？`)) return;
+            
+            if (currentView === 'artists') {
+                library = library.filter(a => !selectedIds.includes(a.id));
+            } else if (currentView === 'albums') {
+                selectedArtist.albums = selectedArtist.albums.filter(alb => !selectedIds.includes(alb.id));
+            } else if (currentView === 'songs') {
+                selectedAlbum.songs = selectedAlbum.songs.filter(s => !selectedIds.includes(s.id));
+            }
+            
+            saveLibrary();
+            navigateTo(currentView);
+        }
+
+        function enableSortMode() {
+            closeMenu();
+            isSortMode = true;
+            document.getElementById('normal-actions').classList.add('hidden');
+            document.getElementById('mode-actions').classList.remove('hidden');
+            
+            const confirmBtn = document.getElementById('mode-confirm-btn');
+            const cancelBtn = document.getElementById('mode-cancel-btn');
+            cancelBtn.classList.add('hidden'); // ソート時はDoneボタンのみ
+            
+            confirmBtn.innerText = "Done";
+            confirmBtn.onclick = () => {
+                saveLibrary();
+                navigateTo(currentView);
+            };
+            render();
+        }
+
+        // 簡易並び替えロジック（クリックした要素を一つ上に移動）
+        function moveItem(index) {
+            if (index === 0) return;
+            let list = [];
+            if (currentView === 'artists') list = library;
+            else if (currentView === 'albums') list = selectedArtist.albums;
+            else if (currentView === 'songs') list = selectedAlbum.songs;
+            
+            const temp = list[index];
+            list[index] = list[index - 1];
+            list[index - 1] = temp;
+            render();
+        }
+
+        // --- 再生エンジンコントロール ---
+        function startPlay(song, list, index) {
+            currentPlayingSong = song;
+            currentPlayingList = list;
+            currentPlayingIndex = index;
+            
+            audioEngine.src = song.uri;
+            audioEngine.play();
+            
+            // プレイヤーUI更新
+            document.getElementById('mini-title').innerText = song.title;
+            document.getElementById('mini-artist').innerText = selectedArtist ? selectedArtist.artist : "Unknown Artist";
+            document.getElementById('mini-player').classList.add('active');
+            
+            updatePlayerUI();
+        }
+
+        function updatePlayerUI() {
+            if (!currentPlayingSong) return;
+            document.getElementById('player-title').innerText = currentPlayingSong.title;
+            document.getElementById('player-artist').innerText = selectedArtist ? selectedArtist.artist : "Unknown Artist";
+            document.getElementById('player-album').innerText = selectedAlbum ? selectedAlbum.title : "Unknown Album";
+            document.getElementById('player-art').src = (selectedAlbum && selectedAlbum.customCover) || defaultCover;
+            
+            document.getElementById('player-play-icon').setAttribute('name', 'pause');
+            document.getElementById('mini-play-icon').setAttribute('name', 'pause');
+        }
+
+        function togglePlay() {
+            if (audioEngine.paused) {
+                audioEngine.play();
+                document.getElementById('player-play-icon').setAttribute('name', 'pause');
+                document.getElementById('mini-play-icon').setAttribute('name', 'pause');
+            } else {
+                audioEngine.pause();
+                document.getElementById('player-play-icon').setAttribute('name', 'play');
+                document.getElementById('mini-play-icon').setAttribute('name', 'play');
+            }
+        }
+
+        function playNext() {
+            if (currentPlayingIndex < currentPlayingList.length - 1) {
+                currentPlayingIndex++;
+                startPlay(currentPlayingList[currentPlayingIndex], currentPlayingList, currentPlayingIndex);
+            }
+        }
+
+        function playPrevious() {
+            if (audioEngine.currentTime > 3) {
+                audioEngine.currentTime = 0;
+            } else if (currentPlayingIndex > 0) {
+                currentPlayingIndex--;
+                startPlay(currentPlayingList[currentPlayingIndex], currentPlayingList, currentPlayingIndex);
+            } else {
+                audioEngine.currentTime = 0;
+            }
+        }
+
+        function seekAudio(value) {
+            if (!audioEngine.duration) return;
+            audioEngine.currentTime = (value / 100) * audioEngine.duration;
+        }
+
+        function formatTime(millis) {
+            if (!millis) return "0:00";
+            const sec = Math.floor(millis / 1000);
+            return `${Math.floor(sec / 60)}:${(sec % 60).toString().padStart(2, '0')}`;
+        }
+
+        function openPlayer() { document.getElementById('player-view').classList.add('open'); }
+        function closePlayer() { document.getElementById('player-view').classList.remove('open'); }
+    </script>
+</body>
+</html>
