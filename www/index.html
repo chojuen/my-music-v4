@@ -198,6 +198,42 @@
             });
         };
 
+        // --- Androidの本体戻るボタンの制御 ---
+// CapacitorのAppプラグインを読み込みます
+import { App } from '@capacitor/app';
+
+App.addListener('backButton', () => {
+    // 1. もしメニューが開いていたらメニューを閉じる
+    if (isMenuOpen) {
+        closeMenu();
+        return;
+    }
+    
+    // 2. もし削除モードやソートモードなら、モードを解除する
+    if (isDeleteMode || isSortMode) {
+        navigateTo(currentView);
+        return;
+    }
+    
+    // 3. フル画面プレイヤーが開いていたら閉じる
+    if (document.getElementById('player-view').classList.contains('open')) {
+        closePlayer();
+        return;
+    }
+    
+    // 4. アプリ内の画面遷移（ここがご要望の核心です！）
+    if (currentView === 'songs') {
+        // 曲一覧にいたら、アルバム一覧に戻る
+        navigateTo('albums', selectedArtist);
+    } else if (currentView === 'albums') {
+        // アルバム一覧にいたら、アーティスト一覧に戻る
+        navigateTo('artists');
+    } else if (currentView === 'artists') {
+        // アーティスト一覧（トップ画面）にいたら、アプリを終了してホームに戻る
+        App.exitApp();
+    }
+});
+
         function saveLibrary() {
             localStorage.setItem('my_music_library', JSON.stringify(library));
         }
