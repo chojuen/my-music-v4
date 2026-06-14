@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Music Player</title>
@@ -198,11 +199,41 @@
             });
         };
 
-        // --- Androidの本体戻るボタンの制御 ---
-// CapacitorのAppプラグインを読み込みます
-import { App } from '@capacitor/app';
+// --- Androidの本体戻るボタンの制御 ---
+// window.Capacitor を経由してAppプラグインを取得します
+const { App } = window.Capacitor ? window.Capacitor.Plugins : {};
 
-App.addListener('backButton', () => {
+if (App) {
+    App.addListener('backButton', () => {
+        // 1. もしメニューが開いていたらメニューを閉じる
+        if (isMenuOpen) {
+            closeMenu();
+            return;
+        }
+        
+        // 2. もし削除モードやソートモードなら、モードを解除する
+        if (isDeleteMode || isSortMode) {
+            navigateTo(currentView);
+            return;
+        }
+        
+        // 3. フル画面プレイヤーが開いていたら閉じる
+        if (document.getElementById('player-view').classList.contains('open')) {
+            closePlayer();
+            return;
+        }
+        
+        // 4. アプリ内の画面遷移
+        if (currentView === 'songs') {
+            navigateTo('albums', selectedArtist);
+        } else if (currentView === 'albums') {
+            navigateTo('artists');
+        } else if (currentView === 'artists') {
+            App.exitApp();
+        }
+    });
+}
+
     // 1. もしメニューが開いていたらメニューを閉じる
     if (isMenuOpen) {
         closeMenu();
@@ -341,45 +372,81 @@ App.addListener('backButton', () => {
             // 必要に応じて戻る処理を実装可能
         });
 
-        // --- 音楽追加ロジック ---
+// --- 音楽追加ロジック ---
         function triggerMusicPicker() { document.getElementById('music-input').click(); }
+        
         function handleMusicUpload(event) {
             const files = event.target.files;
             if (!files.length) return;
             
+            // 処理するファイルの総数をカウント
+            let processedCount = 0;
+
             for (let file of files) {
                 const objectUrl = URL.createObjectURL(file);
                 
-                // ブラウザ版ではファイル名から簡易的にアーティストとアルバムを判定します
-                // 例: "アーティスト名 - 曲名.mp3" などの解析
-                let artistName = "Unknown Artist";
-                let albumName = "Unknown Album";
-                let songTitle = file.name.replace(/\.[^/.]+$/, ""); // 拡張子削除
-                
-                if (songTitle.includes('-')) {
-                    const parts = songTitle.split('-');
-                    artistName = parts[0].trim();
-                    songTitle = parts[1].trim();
-                }
+                // jsmediatagsを使ってファイルのメタデータを解析（ジャケット画像は無視）
+                window.jsmediatags.read(file, {
+                    onSuccess: function(tag) {
+                        // メタデータから各情報を取得。空ならファイル名から拡張子を消したものを身代わりに
+                        let artistName = tag.tags.artist ? tag.tags.artist.trim() : "Unknown Artist";
+                        let albumName = tag.tags.album ? tag.tags.album.trim() : "Unknown Album";
+                        let songTitle = tag.tags.title ? tag.tags.title.trim() : file.name.replace(/\.[^/.]+$/, "");
 
-                let art = library.find(a => a.artist === artistName);
-                if (!art) {
-                    art = { id: 'art-' + Date.now() + '-' + Math.random(), artist: artistName, albums: [] };
-                    library.push(art);
-                }
-                let alb = art.albums.find(al => al.title === albumName);
-                if (!alb) {
-                    alb = { id: 'alb-' + Date.now() + '-' + Math.random(), title: albumName, songs: [] };
-                    art.albums.push(alb);
-                }
-                
-                alb.songs.push({
-                    id: 'snd-' + Date.now() + '-' + Math.random(),
-                    title: songTitle,
-                    uri: objectUrl // ブラウザ内で再生可能な一時URL
+                        // データをライブラリに追加する共通処理を実行
+                        addSongToDataStructure(artistName, albumName, songTitle, objectUrl);
+                        
+                        // 全てのファイルの処理が終わったら画面を更新
+                        processedCount++;
+                        if (processedCount === files.length) {
+                            finalizeUpload();
+                        }
+                    },
+                    onError: function(error) {
+                        // 万が一メタデータが壊れて読めない場合は、従来のファイル名解析（セーフティネット）
+                        let artistName = "Unknown Artist";
+                        let albumName = "Unknown Album";
+                        let songTitle = file.name.replace(/\.[^/.]+$/, "");
+                        
+                        if (songTitle.includes('-')) {
+                            const parts = songTitle.split('-');
+                            artistName = parts[0].trim();
+                            songTitle = parts[1].trim();
+                        }
+
+                        addSongToDataStructure(artistName, albumName, songTitle, objectUrl);
+                        
+                        processedCount++;
+                        if (processedCount === files.length) {
+                            finalizeUpload();
+                        }
+                    }
                 });
             }
+        }
+
+        // ライブラリのデータ構造に曲を当てはめる補助関数
+        function addSongToDataStructure(artistName, albumName, songTitle, objectUrl) {
+            let art = library.find(a => a.artist === artistName);
+            if (!art) {
+                art = { id: 'art-' + Date.now() + '-' + Math.random(), artist: artistName, albums: [] };
+                library.push(art);
+            }
+            let alb = art.albums.find(al => al.title === albumName);
+            if (!alb) {
+                alb = { id: 'alb-' + Date.now() + '-' + Math.random(), title: albumName, songs: [] };
+                art.albums.push(alb);
+            }
             
+            alb.songs.push({
+                id: 'snd-' + Date.now() + '-' + Math.random(),
+                title: songTitle,
+                uri: objectUrl
+            });
+        }
+
+        // アップロード完了後の共通処理
+        function finalizeUpload() {
             saveLibrary();
             render();
             closeMenu();
