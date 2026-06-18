@@ -345,35 +345,75 @@ if (App) {
 // --- 音楽追加ロジック ---
         function triggerMusicPicker() { document.getElementById('music-input').click(); }
         
-        function handleMusicUpload(event) {
+        // ファイルをアプリの専用領域に保存する関数
+        async function saveFileToDevice(file) {
+            if (!window.Capacitor || !window.Capacitor.Plugins.Filesystem) {
+                // ブラウザ環境（PC検証時など）は、これまで通り一時URLを返す
+                return URL.createObjectURL(file);
+            }
+
+            const { Filesystem } = window.Capacitor.Plugins;
+            
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const base64Data = reader.result.split(',')[1];
+                    // スマホ内でのユニークなファイル名を作成（同名ファイルの衝突を避ける）
+                    const fileName = 'music_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7) + '_' + file.name;
+                    
+                    try {
+                        // アプリ専用の「Documents」フォルダにファイルを保存
+                        const result = await Filesystem.writeFile({
+                            path: fileName,
+                            data: base64Data,
+                            directory: 'DOCUMENTS'
+                        });
+                        
+                        // 再生時にCapacitorが解釈できる、スマホ内の永続URL（パス）を取得
+                        const fileUrlResult = await Filesystem.getUri({
+                            path: fileName,
+                            directory: 'DOCUMENTS'
+                        });
+                        
+                        // 「content://...」や「file://...」の形式を、ブラウザエンジンで再生できるURLに変換
+                        const finalPlaybackUrl = window.Capacitor.convertFileSrc(fileUrlResult.uri);
+                        resolve(finalPlaybackUrl);
+                    } catch (e) {
+                        console.error('ファイルの保存に失敗しました:', e);
+                        resolve(URL.createObjectURL(file)); // 失敗時はセーフティネット
+                    }
+                };
+                reader.onerror = () => resolve(URL.createObjectURL(file));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        async function handleMusicUpload(event) {
             const files = event.target.files;
             if (!files.length) return;
             
-            // 処理するファイルの総数をカウント
             let processedCount = 0;
 
             for (let file of files) {
-                const objectUrl = URL.createObjectURL(file);
+                // 1. まずファイルをスマホのストレージに永続保存し、消えないURLを取得する
+                const permanentUrl = await saveFileToDevice(file);
                 
-                // jsmediatagsを使ってファイルのメタデータを解析（ジャケット画像は無視）
+                // 2. そのURLを使って、これまで通りjsmediatagsで解析する
                 window.jsmediatags.read(file, {
                     onSuccess: function(tag) {
-                        // メタデータから各情報を取得。空ならファイル名から拡張子を消したものを身代わりに
                         let artistName = tag.tags.artist ? tag.tags.artist.trim() : "Unknown Artist";
                         let albumName = tag.tags.album ? tag.tags.album.trim() : "Unknown Album";
                         let songTitle = tag.tags.title ? tag.tags.title.trim() : file.name.replace(/\.[^/.]+$/, "");
 
-                        // データをライブラリに追加する共通処理を実行
-                        addSongToDataStructure(artistName, albumName, songTitle, objectUrl);
+                        // 一時URLではなく、永続URL（permanentUrl）をライブラリに保存！
+                        addSongToDataStructure(artistName, albumName, songTitle, permanentUrl);
                         
-                        // 全てのファイルの処理が終わったら画面を更新
                         processedCount++;
                         if (processedCount === files.length) {
                             finalizeUpload();
                         }
                     },
                     onError: function(error) {
-                        // 万が一メタデータが壊れて読めない場合は、従来のファイル名解析（セーフティネット）
                         let artistName = "Unknown Artist";
                         let albumName = "Unknown Album";
                         let songTitle = file.name.replace(/\.[^/.]+$/, "");
@@ -384,7 +424,8 @@ if (App) {
                             songTitle = parts[1].trim();
                         }
 
-                        addSongToDataStructure(artistName, albumName, songTitle, objectUrl);
+                        // エラー時も永続URL（permanentUrl）を保存！
+                        addSongToDataStructure(artistName, albumName, songTitle, permanentUrl);
                         
                         processedCount++;
                         if (processedCount === files.length) {
