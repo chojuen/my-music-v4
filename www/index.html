@@ -3,6 +3,7 @@
 <head>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
     <script src="jsmediatags.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Music Player</title>
@@ -495,20 +496,31 @@ if (App) {
             document.getElementById('edit-btn').innerText = "Edit";
         }
 
-        function enableDeleteMode() {
+        function enableSortMode() {
             closeMenu();
-            isDeleteMode = true;
+            isSortMode = true;
             document.getElementById('normal-actions').classList.add('hidden');
             document.getElementById('mode-actions').classList.remove('hidden');
             
             const confirmBtn = document.getElementById('mode-confirm-btn');
             const cancelBtn = document.getElementById('mode-cancel-btn');
-            cancelBtn.classList.remove('hidden');
+            cancelBtn.classList.add('hidden'); // ソート時はDoneボタンのみ
             
-            confirmBtn.innerText = "Delete (0)";
-            confirmBtn.onclick = deleteSelectedItems;
-            cancelBtn.onclick = () => navigateTo(currentView);
+            confirmBtn.innerText = "Done";
+            
+            // ⭕ 【修正】現在の画面状態を壊さないように、安全に表示をリフレッシュする
+            confirmBtn.onclick = () => {
+                isSortMode = false; // ソートモード終了
+                document.getElementById('normal-actions').classList.remove('hidden');
+                document.getElementById('mode-actions').classList.add('hidden');
+                saveLibrary(); // 並び替えた順序を保存
+                render(); // 画面を通常モードで再描画
+            };
+            
             render();
+            
+            // 🔥 【追加】直感的なドラッグ＆ドロップ機能を有効にする
+            initSortable();
         }
 
         function toggleSelection(id) {
@@ -555,18 +567,36 @@ if (App) {
             render();
         }
 
-        // 簡易並び替えロジック（クリックした要素を一つ上に移動）
-        function moveItem(index) {
-            if (index === 0) return;
-            let list = [];
-            if (currentView === 'artists') list = library;
-            else if (currentView === 'albums') list = selectedArtist.albums;
-            else if (currentView === 'songs') list = selectedAlbum.songs;
-            
-            const temp = list[index];
-            list[index] = list[index - 1];
-            list[index - 1] = temp;
-            render();
+        // --- 🤖 新しい直感的なドラッグ並び替えロジック ---
+        function initSortable() {
+            const listContainer = document.getElementById('list-container');
+            if (!listContainer) return;
+
+            // SortableJSをリストコンテナに適用します
+            Sortable.create(listContainer, {
+                animation: 150, // 動いたときの滑らかなアニメーション（ミリ秒）
+                handle: '.drag-handle', // 三本線（ハンドル）の部分を掴んだときだけ動くようにする
+                
+                // ドラッグして並び替えが完了した瞬間に動く処理
+                onEnd: function (evt) {
+                    const oldIndex = evt.oldIndex; // 動かす前の位置
+                    const newIndex = evt.newIndex; // 動かした後の位置
+                    
+                    if (oldIndex === newIndex) return;
+
+                    // 現在の画面に応じた配列（データ）を取得
+                    let list = [];
+                    if (currentView === 'artists') list = library;
+                    else if (currentView === 'albums') list = selectedArtist.albums;
+                    else if (currentView === 'songs') list = selectedAlbum.songs;
+
+                    // 実際のデータ配列の順番を入れ替える
+                    const targetItem = list.splice(oldIndex, 1)[0];
+                    list.splice(newIndex, 0, targetItem);
+                    
+                    // ※ 注意：ここではまだ保存せず、Doneを押した瞬間に保存します
+                }
+            });
         }
 
         // --- 再生エンジンコントロール ---
